@@ -25,6 +25,7 @@ class AppController:
         self.sidebar.on_open_file = self._handle_open_file
         self.sidebar.on_zoom_change = self._handle_zoom_change
         self.viewer.on_cursor_move = self._handle_cursor_move
+        self.viewer.on_zoom_change = self._handle_viewer_zoom_changed
 
     # ---- Handlers ----
     def _handle_open_file(self) -> None:
@@ -57,5 +58,9 @@ class AppController:
 
     def _handle_cursor_move(self, x: Optional[int], y: Optional[int], rgba: Optional[Tuple[int, int, int, int]]) -> None:
         self.sidebar.update_cursor_info(x, y, rgba)
+
+    def _handle_viewer_zoom_changed(self, zoom_percent: int) -> None:
+        # Sync sidebar slider/value when user zooms with mouse wheel
+        self.sidebar.set_zoom_percent(zoom_percent)
 
 
