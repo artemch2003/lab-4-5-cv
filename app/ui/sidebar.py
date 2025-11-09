@@ -86,13 +86,132 @@ class Sidebar(ctk.CTkFrame):
         self._proc_title.grid(row=20, column=0, padx=8, pady=(8, 4), sticky="w")
 
         self._processing_mode = ctk.StringVar(value="Нет")
-        self._processing_menu = ctk.CTkOptionMenu(
-            self,
-            values=["Нет", "Оттенки серого"],
+        # Вкладки режимов обработки
+        self._tabs = ctk.CTkTabview(self)
+        self._tabs.grid(row=21, column=0, padx=8, pady=(0, 8), sticky="nsew")
+        self._tabs.add("Базовая")
+        self._tabs.add("Границы")
+        self._tabs.add("Пороговые")
+        self._tabs.add("K-средних")
+
+        # Кнопка быстрого возврата к оригиналу
+        self._reset_btn = ctk.CTkButton(self, text="Показать оригинал", command=self._reset_to_original)
+        self._reset_btn.grid(row=22, column=0, padx=8, pady=(0, 8), sticky="ew")
+
+        # Базовая
+        base_tab = self._tabs.tab("Базовая")
+        base_tab.grid_columnconfigure(0, weight=1)
+        self._rb_none = ctk.CTkRadioButton(
+            base_tab, text="Нет", variable=self._processing_mode, value="Нет", command=self._emit_processing_change
+        )
+        self._rb_gray = ctk.CTkRadioButton(
+            base_tab,
+            text="Оттенки серого",
             variable=self._processing_mode,
+            value="Оттенки серого",
             command=self._emit_processing_change,
         )
-        self._processing_menu.grid(row=21, column=0, padx=8, pady=(0, 8), sticky="ew")
+        self._rb_none.grid(row=0, column=0, padx=6, pady=(4, 2), sticky="w")
+        self._rb_gray.grid(row=1, column=0, padx=6, pady=(2, 4), sticky="w")
+
+        # Границы
+        edges_tab = self._tabs.tab("Границы")
+        edges_tab.grid_columnconfigure(0, weight=1)
+        self._rb_sobel = ctk.CTkRadioButton(
+            edges_tab,
+            text="Края (Собель)",
+            variable=self._processing_mode,
+            value="Края (Собель)",
+            command=self._emit_processing_change,
+        )
+        self._rb_sobel.grid(row=0, column=0, padx=6, pady=(6, 6), sticky="w")
+
+        # Пороговые
+        thr_tab = self._tabs.tab("Пороговые")
+        thr_tab.grid_columnconfigure(0, weight=1)
+        # P-tile
+        self._rb_ptile = ctk.CTkRadioButton(
+            thr_tab,
+            text="Порог (P-tile)",
+            variable=self._processing_mode,
+            value="Порог (P-tile)",
+            command=self._emit_processing_change,
+        )
+        self._rb_ptile.grid(row=0, column=0, padx=6, pady=(6, 2), sticky="w")
+        self._ptile_p_val = ctk.StringVar(value="30%")
+        self._ptile_p_label = ctk.CTkLabel(thr_tab, text="P (доля объекта):")
+        self._ptile_p_slider = ctk.CTkSlider(thr_tab, from_=0, to=100, number_of_steps=100, command=self._on_ptile_change)
+        self._ptile_p_slider.set(30)
+        self._ptile_p_value = ctk.CTkLabel(thr_tab, textvariable=self._ptile_p_val, width=48, anchor="w")
+        self._ptile_p_label.grid(row=1, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._ptile_p_slider.grid(row=2, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._ptile_p_value.grid(row=3, column=0, padx=6, pady=(0, 6), sticky="w")
+        # Итеративный
+        self._rb_iter = ctk.CTkRadioButton(
+            thr_tab,
+            text="Порог (итеративный)",
+            variable=self._processing_mode,
+            value="Порог (итеративный)",
+            command=self._emit_processing_change,
+        )
+        self._rb_iter.grid(row=4, column=0, padx=6, pady=(8, 2), sticky="w")
+        self._iter_tol_val = ctk.StringVar(value="0.5")
+        self._iter_tol_label = ctk.CTkLabel(thr_tab, text="Порог сходимости (tol):")
+        self._iter_tol_slider = ctk.CTkSlider(thr_tab, from_=0.1, to=5.0, number_of_steps=49, command=self._on_iter_tol_change)
+        self._iter_tol_slider.set(0.5)
+        self._iter_tol_value = ctk.CTkLabel(thr_tab, textvariable=self._iter_tol_val, width=48, anchor="w")
+        self._iter_tol_label.grid(row=5, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._iter_tol_slider.grid(row=6, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._iter_tol_value.grid(row=7, column=0, padx=6, pady=(0, 4), sticky="w")
+        self._iter_max_iter_val = ctk.StringVar(value="100")
+        self._iter_max_iter_label = ctk.CTkLabel(thr_tab, text="Макс. итераций:")
+        self._iter_max_iter_entry = ctk.CTkEntry(thr_tab, textvariable=self._iter_max_iter_val, width=80)
+        self._iter_max_iter_label.grid(row=8, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._iter_max_iter_entry.grid(row=9, column=0, padx=6, pady=(0, 8), sticky="w")
+        self._iter_max_iter_entry.bind("<FocusOut>", self._on_iter_params_commit)
+        self._iter_max_iter_entry.bind("<Return>", self._on_iter_params_commit)
+
+        # K-средних
+        km_tab = self._tabs.tab("K-средних")
+        km_tab.grid_columnconfigure(0, weight=1)
+        self._rb_kmeans_single = ctk.CTkRadioButton(
+            km_tab,
+            text="K‑средних (k)",
+            variable=self._processing_mode,
+            value="K-средних (k=2)",
+            command=self._emit_processing_change,
+        )
+        self._rb_kmeans_single.grid(row=0, column=0, padx=6, pady=(6, 2), sticky="w")
+        self._kmeans_k_val = ctk.StringVar(value="2")
+        self._kmeans_k_label = ctk.CTkLabel(km_tab, text="k:")
+        self._kmeans_k_slider = ctk.CTkSlider(km_tab, from_=2, to=8, number_of_steps=6, command=self._on_kmeans_k_change)
+        self._kmeans_k_slider.set(2)
+        self._kmeans_k_value = ctk.CTkLabel(km_tab, textvariable=self._kmeans_k_val, width=32, anchor="w")
+        self._kmeans_k_label.grid(row=1, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._kmeans_k_slider.grid(row=2, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._kmeans_k_value.grid(row=3, column=0, padx=6, pady=(0, 8), sticky="w")
+        self._kmeans_max_iter_val = ctk.StringVar(value="50")
+        self._kmeans_max_iter_label = ctk.CTkLabel(km_tab, text="Макс. итераций:")
+        self._kmeans_max_iter_entry = ctk.CTkEntry(km_tab, textvariable=self._kmeans_max_iter_val, width=80)
+        self._kmeans_max_iter_label.grid(row=4, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._kmeans_max_iter_entry.grid(row=5, column=0, padx=6, pady=(0, 8), sticky="w")
+        self._kmeans_max_iter_entry.bind("<FocusOut>", self._on_kmeans_params_commit)
+        self._kmeans_max_iter_entry.bind("<Return>", self._on_kmeans_params_commit)
+        self._rb_kmeans_cmp = ctk.CTkRadioButton(
+            km_tab,
+            text="K‑средних сравнение",
+            variable=self._processing_mode,
+            value="K-средних сравнение (2,3,4)",
+            command=self._emit_processing_change,
+        )
+        self._rb_kmeans_cmp.grid(row=6, column=0, padx=6, pady=(8, 2), sticky="w")
+        self._kmeans_cmp_label = ctk.CTkLabel(km_tab, text="Список k (через запятую):")
+        self._kmeans_cmp_vals = ctk.StringVar(value="2,3,4")
+        self._kmeans_cmp_entry = ctk.CTkEntry(km_tab, textvariable=self._kmeans_cmp_vals)
+        self._kmeans_cmp_label.grid(row=7, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._kmeans_cmp_entry.grid(row=8, column=0, padx=6, pady=(0, 8), sticky="ew")
+        self._kmeans_cmp_entry.bind("<FocusOut>", self._on_kmeans_params_commit)
+        self._kmeans_cmp_entry.bind("<Return>", self._on_kmeans_params_commit)
 
         self._compare_title = ctk.CTkLabel(self, text="Сравнение (внизу)", font=ctk.CTkFont(size=16, weight="bold"))
         self._compare_title.grid_remove()
@@ -140,8 +259,17 @@ class Sidebar(ctk.CTkFrame):
         self._wipe_value.set(f"{percent}%")
 
     def set_processing_mode_value(self, mode: str) -> None:
-        # mode: "Нет" | "Оттенки серого"
+        # mode: "Нет" | "Оттенки серого" | другие режимы
         self._processing_mode.set(mode)
+        # Переключим вкладку для удобства
+        if mode in ("Нет", "Оттенки серого"):
+            self._tabs.set("Базовая")
+        elif mode.startswith("Края"):
+            self._tabs.set("Границы")
+        elif mode.startswith("Порог"):
+            self._tabs.set("Пороговые")
+        elif mode.startswith("K-средних"):
+            self._tabs.set("K-средних")
 
     # ---- Events ----
     def _emit_open_file(self) -> None:
@@ -166,12 +294,89 @@ class Sidebar(ctk.CTkFrame):
         if self.on_wipe_change:
             self.on_wipe_change(percent)
 
-    def _emit_processing_change(self, _value: str) -> None:
+    def _emit_processing_change(self, _value: object | None = None) -> None:
         mode = self._processing_mode.get()
         if self.on_processing_change:
             self.on_processing_change(mode)
 
     # ---- Helpers ----
+    # Параметры алгоритмов
+    def get_ptile_p(self) -> float:
+        try:
+            percent = float(self._ptile_p_slider.get())
+        except Exception:
+            percent = 30.0
+        return max(0.0, min(1.0, percent / 100.0))
+
+    def get_iterative_params(self) -> Tuple[float, int]:
+        try:
+            tol = float(self._iter_tol_slider.get())
+        except Exception:
+            tol = 0.5
+        try:
+            mi = int(self._iter_max_iter_val.get())
+        except Exception:
+            mi = 100
+        mi = max(1, min(10000, mi))
+        return tol, mi
+
+    def get_kmeans_single_params(self) -> Tuple[int, int]:
+        try:
+            k = int(round(self._kmeans_k_slider.get()))
+        except Exception:
+            k = 2
+        k = max(2, min(64, k))
+        try:
+            mi = int(self._kmeans_max_iter_val.get())
+        except Exception:
+            mi = 50
+        mi = max(1, min(10000, mi))
+        return k, mi
+
+    def get_kmeans_compare_ks(self) -> Tuple[int, ...]:
+        text = self._kmeans_cmp_vals.get().strip()
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        ks = []
+        for p in parts:
+            try:
+                v = int(p)
+                if v >= 2:
+                    ks.append(v)
+            except ValueError:
+                continue
+        if not ks:
+            ks = [2, 3, 4]
+        return tuple(ks[:8])
+
+    # Обработчики изменения параметров — пересчитать немедленно
+    def _on_ptile_change(self, value: float) -> None:
+        self._ptile_p_val.set(f"{int(round(value))}%")
+        if self._processing_mode.get() == "Порог (P-tile)":
+            self._emit_processing_change("")
+
+    def _on_iter_tol_change(self, value: float) -> None:
+        self._iter_tol_val.set(f"{value:.1f}")
+        if self._processing_mode.get() == "Порог (итеративный)":
+            self._emit_processing_change("")
+
+    def _on_iter_params_commit(self, _event: object) -> None:
+        if self._processing_mode.get() == "Порог (итеративный)":
+            self._emit_processing_change("")
+
+    def _on_kmeans_k_change(self, value: float) -> None:
+        self._kmeans_k_val.set(f"{int(round(value))}")
+        if self._processing_mode.get().startswith("K-средних (k"):
+            self._emit_processing_change("")
+
+    def _on_kmeans_params_commit(self, _event: object) -> None:
+        if self._processing_mode.get().startswith("K-средних"):
+            self._emit_processing_change("")
+
+    def _reset_to_original(self) -> None:
+        self._processing_mode.set("Нет")
+        self._tabs.set("Базовая")
+        if self.on_processing_change:
+            self.on_processing_change("Нет")
     def _format_size(self, size_bytes: Optional[int]) -> str:
         if size_bytes is None:
             return "—"

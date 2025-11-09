@@ -109,10 +109,57 @@ class AppController:
     def _apply_processing(self) -> None:
         if self._current_image is None:
             return
-        if self._processing_mode == "Оттенки серого":
-            processed = self._process_service.to_grayscale(self._current_image.pil_image)
-            self.viewer.set_processed_image(processed)
-        else:
-            self.viewer.set_processed_image(None)
+        src = self._current_image.pil_image
+        mode = self._processing_mode
+        processed = None
+        if mode == "Оттенки серого":
+            processed = self._process_service.to_grayscale(src)
+        elif mode == "Края (Собель)":
+            processed = self._process_service.segment_edges_sobel(src)
+        elif mode == "Порог (P-tile)":
+            # получить P из UI (0..1)
+            p = 0.30
+            try:
+                p = self.sidebar.get_ptile_p()
+            except Exception:
+                pass
+            processed = self._process_service.threshold_ptile(src, p=p)
+        elif mode == "Порог (итеративный)":
+            tol, mi = 0.5, 100
+            try:
+                tol, mi = self.sidebar.get_iterative_params()
+            except Exception:
+                pass
+            processed = self._process_service.threshold_iterative(src, tol=tol, max_iter=mi)
+        elif mode == "K-средних (k=2)":
+            k, mi = 2, 50
+            try:
+                k, mi = self.sidebar.get_kmeans_single_params()
+            except Exception:
+                pass
+            processed = self._process_service.kmeans_segment(src, k=k, max_iter=mi)
+        elif mode == "K-средних (k=3)":
+            k, mi = 3, 50
+            try:
+                k, mi = self.sidebar.get_kmeans_single_params()
+            except Exception:
+                pass
+            processed = self._process_service.kmeans_segment(src, k=k, max_iter=mi)
+        elif mode == "K-средних (k=4)":
+            k, mi = 4, 50
+            try:
+                k, mi = self.sidebar.get_kmeans_single_params()
+            except Exception:
+                pass
+            processed = self._process_service.kmeans_segment(src, k=k, max_iter=mi)
+        elif mode == "K-средних сравнение (2,3,4)":
+            ks = (2, 3, 4)
+            try:
+                ks = self.sidebar.get_kmeans_compare_ks()
+            except Exception:
+                pass
+            processed = self._process_service.kmeans_compare(src, ks=ks)
+
+        self.viewer.set_processed_image(processed)
 
 
