@@ -17,8 +17,10 @@ class ImageViewer(ctk.CTkFrame):
         self._canvas.grid(row=0, column=0, sticky="nsew")
 
         self._original_image: Optional[Image.Image] = None
-        self._rgba_sampling_image: Optional[Image.Image] = None
-        self._tk_image: Optional[ImageTk.PhotoImage] = None
+        self._processed_image: Optional[Image.Image] = None
+        self._rgba_sampling_image: Optional[Image.Image] = None  # always RGBA original for sampling
+        self._tk_image_before: Optional[ImageTk.PhotoImage] = None
+        self._tk_image_after: Optional[ImageTk.PhotoImage] = None
 
         self._scale_factor: float = 1.0
         self._fit_scale_factor: float = 1.0
@@ -31,6 +33,11 @@ class ImageViewer(ctk.CTkFrame):
 
         self.on_cursor_move: Optional[Callable[[Optional[int], Optional[int], Optional[Tuple[int, int, int, int]]], None]] = None
         self.on_zoom_change: Optional[Callable[[int], None]] = None
+
+        # compare modes: "off" | "wipe" | "side_by_side"
+        self._compare_mode: str = "off"
+        self._wipe_ratio: float = 0.5
+        self._hold_before_active: bool = False
 
         self._canvas.bind("<Configure>", self._on_canvas_resize)
         self._canvas.bind("<Motion>", self._on_mouse_move)
@@ -46,13 +53,22 @@ class ImageViewer(ctk.CTkFrame):
         self._canvas.bind("<B1-Motion>", self._on_pan_move)
         self._canvas.bind("<ButtonRelease-1>", self._on_pan_end)
 
+        # Hold space to preview "before"
+        self._canvas.bind("<KeyPress-space>", self._on_space_down)
+        self._canvas.bind("<KeyRelease-space>", self._on_space_up)
+
     # ---- Public API ----
     def set_image(self, image: Image.Image) -> None:
         self._original_image = image
+        self._processed_image = None
         self._rgba_sampling_image = image if image.mode == "RGBA" else image.convert("RGBA")
         self._compute_fit_scale()
         self._scale_factor = self._fit_scale_factor
         self._image_top_left = None  # reset to center
+        self._render_image()
+
+    def set_processed_image(self, image: Optional[Image.Image]) -> None:
+        self._processed_image = image
         self._render_image()
 
     def set_zoom_to_fit(self) -> None:
@@ -68,6 +84,18 @@ class ImageViewer(ctk.CTkFrame):
     def get_zoom_percent(self) -> int:
         return int(round(self._scale_factor * 100))
 
+    def set_compare_mode(self, mode: str) -> None:
+        # mode: "Нет" | "Шторка" | "2-up" -> internal: off | wipe | side_by_side
+        mapping = {"Нет": "off", "Шторка": "wipe", "2-up": "side_by_side"}
+        self._compare_mode = mapping.get(mode, "off")
+        self._image_top_left = None  # recenter
+        self._render_image()
+
+    def set_wipe_percent(self, percent: int) -> None:
+        self._wipe_ratio = max(0.0, min(1.0, percent / 100.0))
+        if self._compare_mode == "wipe":
+            self._render_image()
+
     # ---- Internals ----
     def _on_canvas_resize(self, _event: tk.Event) -> None:
         if self._original_image is None:
@@ -81,30 +109,43 @@ class ImageViewer(ctk.CTkFrame):
         if self._original_image is None:
             return
 
-        img_w, img_h = self._original_image.size
-        scaled_w = max(1, int(img_w * self._scale_factor))
-        scaled_h = max(1, int(img_h * self._scale_factor))
-        resized = self._original_image.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
-        self._tk_image = ImageTk.PhotoImage(resized)
-
         canvas_w = int(self._canvas.winfo_width())
         canvas_h = int(self._canvas.winfo_height())
 
-        # compute allowed range for top-left; center if smaller
-        if scaled_w <= canvas_w:
-            min_x = max_x = (canvas_w - scaled_w) // 2
+        img_w, img_h = self._original_image.size
+        scaled_w = max(1, int(img_w * self._scale_factor))
+        scaled_h = max(1, int(img_h * self._scale_factor))
+
+        # prepare resized images as needed
+        show_after = (self._processed_image is not None) and not self._hold_before_active
+        resized_before = self._original_image.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+        resized_after = None
+        if self._processed_image is not None:
+            resized_after = self._processed_image.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+
+        # content dimensions (for panning bounds) differ by mode
+        if self._compare_mode == "side_by_side" and resized_after is not None:
+            content_w = scaled_w * 2 + 16
+            content_h = scaled_h
         else:
-            min_x = canvas_w - scaled_w
+            content_w = scaled_w
+            content_h = scaled_h
+
+        # compute allowed top-left range
+        if content_w <= canvas_w:
+            min_x = max_x = (canvas_w - content_w) // 2
+        else:
+            min_x = canvas_w - content_w
             max_x = 0
-        if scaled_h <= canvas_h:
-            min_y = max_y = (canvas_h - scaled_h) // 2
+        if content_h <= canvas_h:
+            min_y = max_y = (canvas_h - content_h) // 2
         else:
-            min_y = canvas_h - scaled_h
+            min_y = canvas_h - content_h
             max_y = 0
 
         if self._image_top_left is None:
-            x = (canvas_w - scaled_w) // 2 if scaled_w <= canvas_w else 0
-            y = (canvas_h - scaled_h) // 2 if scaled_h <= canvas_h else 0
+            x = (canvas_w - content_w) // 2 if content_w <= canvas_w else 0
+            y = (canvas_h - content_h) // 2 if content_h <= canvas_h else 0
             self._image_top_left = (x, y)
         else:
             ox, oy = self._image_top_left
@@ -112,7 +153,34 @@ class ImageViewer(ctk.CTkFrame):
             y = max(min_y, min(max_y, oy))
             self._image_top_left = (x, y)
 
-        self._canvas.create_image(x, y, image=self._tk_image, anchor="nw")
+        ox, oy = self._image_top_left
+
+        # draw by mode
+        if self._compare_mode == "wipe" and resized_after is not None:
+            split = int(round(scaled_w * self._wipe_ratio))
+            left_crop = resized_before.crop((0, 0, split, scaled_h))
+            right_crop = (resized_after if show_after else resized_before).crop((split, 0, scaled_w, scaled_h))
+
+            self._tk_image_before = ImageTk.PhotoImage(left_crop)
+            self._canvas.create_image(ox, oy, image=self._tk_image_before, anchor="nw")
+
+            self._tk_image_after = ImageTk.PhotoImage(right_crop)
+            self._canvas.create_image(ox + split, oy, image=self._tk_image_after, anchor="nw")
+        elif self._compare_mode == "side_by_side" and resized_after is not None:
+            gap = 16
+            left_img = resized_before
+            right_img = resized_after if show_after else resized_before
+
+            self._tk_image_before = ImageTk.PhotoImage(left_img)
+            self._canvas.create_image(ox, oy, image=self._tk_image_before, anchor="nw")
+
+            self._tk_image_after = ImageTk.PhotoImage(right_img)
+            self._canvas.create_image(ox + scaled_w + gap, oy, image=self._tk_image_after, anchor="nw")
+        else:
+            # single image
+            draw_img = resized_after if (show_after and resized_after is not None) else resized_before
+            self._tk_image_before = ImageTk.PhotoImage(draw_img)
+            self._canvas.create_image(ox, oy, image=self._tk_image_before, anchor="nw")
 
     def _compute_fit_scale(self) -> None:
         if self._original_image is None:
@@ -131,33 +199,63 @@ class ImageViewer(ctk.CTkFrame):
     def _on_mouse_move(self, event: tk.Event) -> None:
         if self._original_image is None or self.on_cursor_move is None:
             return
-        img_x, img_y = self._canvas_to_image_coords(event.x, event.y)
+        img_x, img_y, sample_from_after = self._canvas_to_image_coords(event.x, event.y)
         if img_x is None or img_y is None:
             self.on_cursor_move(None, None, None)
             return
-        rgba = self._rgba_sampling_image.getpixel((img_x, img_y)) if self._rgba_sampling_image else None
+        if sample_from_after and self._processed_image is not None and not self._hold_before_active:
+            rgba_img = self._processed_image if self._processed_image.mode == "RGBA" else self._processed_image.convert("RGBA")
+            rgba = rgba_img.getpixel((img_x, img_y))
+        else:
+            rgba = self._rgba_sampling_image.getpixel((img_x, img_y)) if self._rgba_sampling_image else None
         self.on_cursor_move(img_x, img_y, rgba)
 
     def _on_mouse_leave(self, _event: tk.Event) -> None:
         if self.on_cursor_move:
             self.on_cursor_move(None, None, None)
 
-    def _canvas_to_image_coords(self, cx: int, cy: int) -> Tuple[Optional[int], Optional[int]]:
+    def _canvas_to_image_coords(self, cx: int, cy: int) -> Tuple[Optional[int], Optional[int], bool]:
         if self._original_image is None:
-            return None, None
+            return None, None, False
         img_w, img_h = self._original_image.size
         if self._image_top_left is None:
-            return None, None
+            return None, None, False
         ox, oy = self._image_top_left
         dx = cx - ox
         dy = cy - oy
         if dx < 0 or dy < 0:
-            return None, None
-        x = int(dx / self._scale_factor)
-        y = int(dy / self._scale_factor)
-        if x < 0 or y < 0 or x >= img_w or y >= img_h:
-            return None, None
-        return x, y
+            return None, None, False
+
+        scaled_w = max(1, int(img_w * self._scale_factor))
+        scaled_h = max(1, int(img_h * self._scale_factor))
+
+        # Determine which image under cursor in compare modes
+        if self._compare_mode == "side_by_side" and self._processed_image is not None:
+            gap = 16
+            if 0 <= dx < scaled_w and 0 <= dy < scaled_h:
+                x = int(dx / self._scale_factor)
+                y = int(dy / self._scale_factor)
+                if 0 <= x < img_w and 0 <= y < img_h:
+                    return x, y, False  # before
+            right_dx = dx - (scaled_w + gap)
+            if 0 <= right_dx < scaled_w and 0 <= dy < scaled_h:
+                x = int(right_dx / self._scale_factor)
+                y = int(dy / self._scale_factor)
+                if 0 <= x < img_w and 0 <= y < img_h:
+                    return x, y, True  # after
+            return None, None, False
+
+        # Single or wipe
+        if 0 <= dx < scaled_w and 0 <= dy < scaled_h:
+            x = int(dx / self._scale_factor)
+            y = int(dy / self._scale_factor)
+            if 0 <= x < img_w and 0 <= y < img_h:
+                if self._compare_mode == "wipe" and self._processed_image is not None:
+                    split = int(round(scaled_w * self._wipe_ratio))
+                    sample_after = dx >= split and not self._hold_before_active
+                    return x, y, sample_after
+                return x, y, False
+        return None, None, False
 
     def _get_canvas_bg(self) -> str:
         # Soft checker-like color; CTk does not expose canvas theme, so pick neutral
@@ -212,6 +310,7 @@ class ImageViewer(ctk.CTkFrame):
     def _on_pan_start(self, event: tk.Event) -> None:
         if self._image_top_left is None:
             return
+        self._canvas.focus_set()
         self._is_panning = True
         self._pan_start_canvas_xy = (event.x, event.y)
         self._pan_start_top_left = self._image_top_left
@@ -230,5 +329,17 @@ class ImageViewer(ctk.CTkFrame):
         self._is_panning = False
         self._pan_start_canvas_xy = None
         self._pan_start_top_left = None
+
+    def _on_space_down(self, _event: tk.Event) -> None:
+        if self._compare_mode in ("off", "wipe"):
+            if not self._hold_before_active:
+                self._hold_before_active = True
+                self._render_image()
+
+    def _on_space_up(self, _event: tk.Event) -> None:
+        if self._compare_mode in ("off", "wipe"):
+            if self._hold_before_active:
+                self._hold_before_active = False
+                self._render_image()
 
 
