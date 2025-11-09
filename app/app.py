@@ -1,3 +1,10 @@
+"""Главное окно приложения и компоновка UI.
+
+Принципы:
+- SRP: окно отвечает за структуру интерфейса (композицию виджетов).
+- DIP: логика вынесена в контроллер, которому передаются зависимости (viewer/sidebar/bottom).
+- Чистый код: явная инициализация, предсказуемая сетка, отсутствие скрытых побочных эффектов.
+"""
 import customtkinter as ctk
 
 from app.controllers.app_controller import AppController
@@ -7,6 +14,7 @@ from app.ui.bottom_bar import BottomBar
 
 
 class ImageInspectorApp(ctk.CTk):
+    """Главное окно CustomTkinter с тремя областями: Viewer, Sidebar, BottomBar."""
     def __init__(self) -> None:
         super().__init__()
         ctk.set_appearance_mode("system")

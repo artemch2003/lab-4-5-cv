@@ -1,3 +1,9 @@
+"""Боковая панель: открытие файла, информация, параметры алгоритмов обработки.
+
+Принципы:
+- SRP: управляет только UI параметров, не содержит алгоритмов.
+- ISP: выдаёт параметры через компактные методы `get_*`, события через `on_*`.
+"""
 from __future__ import annotations
 
 from typing import Callable, Optional, Tuple
@@ -8,11 +14,13 @@ from app.models.image_model import ImageData
 
 
 def _rgba_to_hex(rgba: Tuple[int, int, int, int]) -> str:
+    """Преобразует RGBA в HEX (без альфа)."""
     r, g, b, _a = rgba
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
 class Sidebar(ctk.CTkFrame):
+    """Панель инструментов с блоками: файл, информация, курсор, обработка."""
     def __init__(self, master: ctk.CTk, **kwargs) -> None:
         super().__init__(master, width=280, **kwargs)
 
@@ -331,12 +339,14 @@ class Sidebar(ctk.CTkFrame):
 
     # ---- Public API ----
     def set_image_info(self, image_data: ImageData) -> None:
+        """Отображает метаданные загруженного изображения."""
         self._path_val.set(str(image_data.path))
         self._size_val.set(self._format_size(image_data.size_bytes))
         self._dims_val.set(f"{image_data.width} × {image_data.height} px")
         self._mode_val.set(image_data.mode)
 
     def update_cursor_info(self, x: Optional[int], y: Optional[int], rgba: Optional[Tuple[int, int, int, int]]) -> None:
+        """Обновляет информацию по курсору (координаты, RGBA, HEX)."""
         if x is None or y is None or rgba is None:
             self._cursor_xy_val.set("—")
             self._cursor_rgba_val.set("—")
@@ -348,19 +358,23 @@ class Sidebar(ctk.CTkFrame):
         self._cursor_hex_val.set(f"HEX: {_rgba_to_hex(rgba)}")
 
     def set_zoom_percent(self, zoom_percent: int) -> None:
+        """Синхронизирует скрытый слайдер масштаба (историческая совместимость)."""
         self._zoom_slider.set(zoom_percent)
         self._zoom_value.set(f"{zoom_percent}%")
 
     def set_compare_mode_value(self, mode: str) -> None:
+        """Синхронизирует (скрытый) режим сравнения и «шторки»."""
         # mode: "Нет" | "Шторка" | "2-up"
         self._compare_mode.set(mode)
         self._toggle_wipe_controls(visible=(mode == "Шторка"))
 
     def set_wipe_percent(self, percent: int) -> None:
+        """Синхронизирует положение «шторки» на сайдбаре (скрытые элементы)."""
         self._wipe_slider.set(percent)
         self._wipe_value.set(f"{percent}%")
 
     def set_processing_mode_value(self, mode: str) -> None:
+        """Выставляет активный режим обработки и переключает вкладку."""
         # mode: "Нет" | "Оттенки серого" | другие режимы
         self._processing_mode.set(mode)
         # Переключим вкладку для удобства
@@ -404,6 +418,7 @@ class Sidebar(ctk.CTkFrame):
     # ---- Helpers ----
     # Параметры алгоритмов
     def get_ptile_p(self) -> float:
+        """Возвращает P для P-tile в диапазоне [0,1]."""
         try:
             percent = float(self._ptile_p_slider.get())
         except Exception:
@@ -411,6 +426,7 @@ class Sidebar(ctk.CTkFrame):
         return max(0.0, min(1.0, percent / 100.0))
 
     def get_iterative_params(self) -> Tuple[float, int]:
+        """Возвращает (tol, max_iter) для итеративного порога."""
         try:
             tol = float(self._iter_tol_slider.get())
         except Exception:
@@ -423,6 +439,7 @@ class Sidebar(ctk.CTkFrame):
         return tol, mi
 
     def get_kmeans_single_params(self) -> Tuple[int, int]:
+        """Возвращает (k, max_iter) для одиночного K-средних."""
         try:
             k = int(round(self._kmeans_k_slider.get()))
         except Exception:
@@ -436,6 +453,7 @@ class Sidebar(ctk.CTkFrame):
         return k, mi
 
     def get_kmeans_compare_ks(self) -> Tuple[int, ...]:
+        """Возвращает кортеж k (>=2) для сравнения K-средних, не более 8 значений."""
         text = self._kmeans_cmp_vals.get().strip()
         parts = [p.strip() for p in text.split(",") if p.strip()]
         ks = []
@@ -451,6 +469,13 @@ class Sidebar(ctk.CTkFrame):
         return tuple(ks[:8])
     # Адаптивный: параметры и списки для сравнения
     def get_adaptive_params(self) -> Tuple[int, float, float, str, str]:
+        """Возвращает (k, C, T, stat, polarity) для адаптивного порогования.
+
+        Где:
+            k — нечётное, минимум 3;
+            stat — 'mean' | 'median' | 'midrange';
+            polarity — пока фиксировано 'bright' (объект светлее фона).
+        """
         # k
         try:
             k_val = int(round(self._adapt_k_slider.get()))
@@ -483,6 +508,7 @@ class Sidebar(ctk.CTkFrame):
         return k_val, C_val, T_val, stat_key, polarity
 
     def get_adaptive_compare_ks(self) -> Tuple[int, ...]:
+        """Возвращает k (нечётные >=3) для сравнения по окну, не более 8 значений."""
         text = self._adapt_cmp_ks_vals.get().strip()
         parts = [p.strip() for p in text.split(",") if p.strip()]
         ks = []
@@ -501,6 +527,7 @@ class Sidebar(ctk.CTkFrame):
         return tuple(ks[:8])
 
     def get_adaptive_compare_Cs(self) -> Tuple[float, ...]:
+        """Возвращает список значений C для сравнения, не более 8 значений."""
         text = self._adapt_cmp_cs_vals.get().strip()
         parts = [p.strip() for p in text.split(",") if p.strip()]
         out: list[float] = []
@@ -514,6 +541,7 @@ class Sidebar(ctk.CTkFrame):
         return tuple(out[:8])
 
     def get_adaptive_compare_Ts(self) -> Tuple[float, ...]:
+        """Возвращает список значений T для сравнения, не более 8 значений."""
         text = self._adapt_cmp_ts_vals.get().strip()
         parts = [p.strip() for p in text.split(",") if p.strip()]
         out: list[float] = []

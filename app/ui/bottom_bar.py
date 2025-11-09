@@ -1,3 +1,9 @@
+"""Нижняя панель управления: масштаб, пресеты, режим сравнения, «шторка».
+
+Принципы:
+- SRP: только отображение и сбор пользовательского ввода.
+- ISP: предоставляет компактное API (set_*, on_* колбэки), без лишних методов.
+"""
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -6,6 +12,7 @@ import customtkinter as ctk
 
 
 class BottomBar(ctk.CTkFrame):
+    """Панель с контролами зума и сравнения изображений."""
     def __init__(self, master: ctk.CTk, **kwargs) -> None:
         super().__init__(master, height=64, **kwargs)
 
@@ -57,6 +64,7 @@ class BottomBar(ctk.CTkFrame):
 
     # public API (sync from controller)
     def set_zoom_percent(self, percent: int) -> None:
+        """Отображает заданный масштаб в процентах и подстраивает выбранный пресет."""
         self._zoom_slider.set(percent)
         self._zoom_value.set(f"{percent}%")
         label = "Fit" if self._preset_buttons.get() == "Fit" else f"{percent}%"
@@ -70,11 +78,13 @@ class BottomBar(ctk.CTkFrame):
                 self._preset_buttons.set(f"{percent}%")
 
     def set_compare_mode_value(self, mode: str) -> None:
+        """Синхронизирует отображаемый режим сравнения и видимость «шторки»."""
         # "Нет" | "Шторка" | "2-up"
         self._compare_menu.set(mode)
         self._toggle_wipe_controls(visible=(mode == "Шторка"))
 
     def set_wipe_percent(self, percent: int) -> None:
+        """Синхронизирует позицию «шторки» в процентах."""
         self._wipe_slider.set(percent)
         self._wipe_value.set(f"{percent}%")
 

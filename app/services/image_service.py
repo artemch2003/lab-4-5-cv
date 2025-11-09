@@ -1,3 +1,10 @@
+"""Загрузка изображений с диска и упаковка метаданных.
+
+Принципы:
+- SRP: класс отвечает только за загрузку и базовое извлечение свойств.
+- OCP: новые источники (стрим, URL) можно добавить отдельными методами.
+- LSP/ISP: возвращает `ImageData` с предсказуемыми полями; интерфейс узкий и конкретный.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +17,18 @@ from app.models.image_model import ImageData
 
 class ImageService:
     def load_image(self, file_path: str | Path) -> ImageData:
+        """Загружает изображение с диска и возвращает его вместе с метаданными.
+
+        Args:
+            file_path: Путь до файла изображения.
+
+        Returns:
+            `ImageData` c `PIL.Image.Image` (в режиме RGBA), размерами, режимом и размером файла.
+
+        Raises:
+            FileNotFoundError: если путь не существует или не указывает на файл.
+            ValueError: если файл не распознан как изображение.
+        """
         path = Path(file_path)
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(f"Файл не найден: {path}")

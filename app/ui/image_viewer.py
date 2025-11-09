@@ -1,3 +1,9 @@
+"""Виджет просмотра изображений: масштабирование, панорамирование и режимы сравнения.
+
+Принципы:
+- SRP: отвечает только за представление и интеракции с изображением.
+- Чистый код: чёткое разделение публичного API и внутренних обработчиков событий.
+"""
 from __future__ import annotations
 
 from typing import Callable, Optional, Tuple
@@ -8,6 +14,7 @@ from PIL import Image, ImageTk
 
 
 class ImageViewer(ctk.CTkFrame):
+    """Канва с логикой отображения «до/после», шторки и side-by-side."""
     def __init__(self, master: ctk.CTk | tk.Misc, **kwargs) -> None:
         super().__init__(master, **kwargs)
         self.grid_rowconfigure(0, weight=1)
@@ -59,6 +66,7 @@ class ImageViewer(ctk.CTkFrame):
 
     # ---- Public API ----
     def set_image(self, image: Image.Image) -> None:
+        """Устанавливает исходное изображение и сбрасывает состояние зума/панорамирования."""
         self._original_image = image
         self._processed_image = None
         self._rgba_sampling_image = image if image.mode == "RGBA" else image.convert("RGBA")
@@ -68,23 +76,28 @@ class ImageViewer(ctk.CTkFrame):
         self._render_image()
 
     def set_processed_image(self, image: Optional[Image.Image]) -> None:
+        """Устанавливает обработанное изображение (может быть None) и перерисовывает виджет."""
         self._processed_image = image
         self._render_image()
 
     def set_zoom_to_fit(self) -> None:
+        """Масштабирует изображение так, чтобы оно целиком помещалось в доступную область."""
         self._compute_fit_scale()
         self._scale_factor = self._fit_scale_factor
         self._image_top_left = None  # reset to center
         self._render_image()
 
     def set_zoom_percent(self, zoom_percent: int) -> None:
+        """Устанавливает масштаб в процентах (10–400%)."""
         self._scale_factor = max(0.1, min(4.0, zoom_percent / 100.0))
         self._render_image()
 
     def get_zoom_percent(self) -> int:
+        """Возвращает текущий масштаб в процентах."""
         return int(round(self._scale_factor * 100))
 
     def set_compare_mode(self, mode: str) -> None:
+        """Устанавливает режим сравнения: 'Нет' | 'Шторка' | '2-up'."""
         # mode: "Нет" | "Шторка" | "2-up" -> internal: off | wipe | side_by_side
         mapping = {"Нет": "off", "Шторка": "wipe", "2-up": "side_by_side"}
         self._compare_mode = mapping.get(mode, "off")
@@ -92,6 +105,7 @@ class ImageViewer(ctk.CTkFrame):
         self._render_image()
 
     def set_wipe_percent(self, percent: int) -> None:
+        """Устанавливает положение «шторки» (0–100%) и перерисовывает при активном режиме."""
         self._wipe_ratio = max(0.0, min(1.0, percent / 100.0))
         if self._compare_mode == "wipe":
             self._render_image()

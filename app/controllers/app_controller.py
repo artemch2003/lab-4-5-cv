@@ -1,3 +1,11 @@
+"""Контроллер приложения: оркестрация UI и сервисов.
+
+SOLID:
+- SRP: класс управляет связями между UI и сервисами (без логики обработки изображений).
+- DIP: зависит от сервисов как от абстрактных ролей; конкретные реализации инкапсулированы.
+Clean Code:
+- Обработчики компактны; тяжёлая логика вынесена в сервисы.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +24,14 @@ from app.ui.bottom_bar import BottomBar
 
 @dataclass
 class AppController:
+    """Связывает элементы UI с прикладной логикой.
+
+    Ответственности:
+    - Инициализация и бинд событий (UI -> контроллер).
+    - Загрузка изображений через `ImageService`.
+    - Применение выбранной пользователем обработки через `ProcessService`.
+    - Синхронизация состояния зума и режимов сравнения.
+    """
     viewer: ImageViewer
     sidebar: Sidebar
     bottom: BottomBar
@@ -27,6 +43,11 @@ class AppController:
     _processing_mode: str = "Нет"  # "Нет" | "Оттенки серого"
 
     def bind_events(self) -> None:
+        """Регистрирует обработчики событий между UI-компонентами.
+
+        Сохраняет слабую связность: компоненты UI ничего не знают друг о друге,
+        общаются через контроллер.
+        """
         self.sidebar.on_open_file = self._handle_open_file
         # Sidebar controls теперь скрыты; зум и сравнение — снизу
         self.viewer.on_cursor_move = self._handle_cursor_move
@@ -107,6 +128,11 @@ class AppController:
 
     # ---- Helpers ----
     def _apply_processing(self) -> None:
+        """Применяет выбранный режим обработки к текущему изображению.
+
+        Использует значения из UI (сайдбар) как параметры и делегирует расчёты
+        методу сервиса обработки. Не мутирует исходное изображение.
+        """
         if self._current_image is None:
             return
         src = self._current_image.pil_image
