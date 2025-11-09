@@ -159,6 +159,42 @@ class AppController:
             except Exception:
                 pass
             processed = self._process_service.kmeans_compare(src, ks=ks)
+        elif mode == "Порог (адаптивный)":
+            # параметры: k, C, T, stat, polarity?
+            k, C, T, stat, polarity = 15, 1.0, 0.0, "mean", "bright"
+            try:
+                k, C, T, stat, polarity = self.sidebar.get_adaptive_params()
+            except Exception:
+                pass
+            processed = self._process_service.adaptive_threshold(src, k=k, C=C, T=T, stat=stat, polarity=polarity)
+        elif mode == "Адаптивный сравнение (k)":
+            ks = (3, 5, 9, 15)
+            C, T, stat, polarity = 1.0, 0.0, "mean", "bright"
+            try:
+                # используем общие параметры адаптивного порога и список ks
+                _k, C, T, stat, polarity = self.sidebar.get_adaptive_params()
+                ks = self.sidebar.get_adaptive_compare_ks()
+            except Exception:
+                pass
+            processed = self._process_service.adaptive_compare_k(src, ks=ks, C=C, T=T, stat=stat, polarity=polarity)
+        elif mode == "Адаптивный сравнение (C)":
+            Cs = (0.8, 1.0, 1.2)
+            k, T, stat, polarity = 15, 0.0, "mean", "bright"
+            try:
+                k, _C, T, stat, polarity = self.sidebar.get_adaptive_params()
+                Cs = self.sidebar.get_adaptive_compare_Cs()
+            except Exception:
+                pass
+            processed = self._process_service.adaptive_compare_C(src, Cs=Cs, k=k, T=T, stat=stat, polarity=polarity)
+        elif mode == "Адаптивный сравнение (T)":
+            Ts = (-10.0, 0.0, 10.0)
+            k, C, stat, polarity = 15, 1.0, "mean", "bright"
+            try:
+                k, C, _T, stat, polarity = self.sidebar.get_adaptive_params()
+                Ts = self.sidebar.get_adaptive_compare_Ts()
+            except Exception:
+                pass
+            processed = self._process_service.adaptive_compare_T(src, Ts=Ts, k=k, C=C, stat=stat, polarity=polarity)
 
         self.viewer.set_processed_image(processed)
 

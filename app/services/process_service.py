@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable, List, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 class ProcessService:
@@ -213,5 +213,156 @@ class ProcessService:
             canvas.paste(img, (x, label_h))
             x += w + gap
         return canvas
+
+    # ---------- 3) Пороговый метод с адаптивным порогом ----------
+    def _local_stat(self, gray_img: Image.Image, window_size: int, stat: str) -> np.ndarray:
+        """
+        Локальная статистика по окрестности:
+        - 'mean'     -> среднее (box blur)
+        - 'median'   -> медиана
+        - 'midrange' -> (min + max)/2
+        Возвращает float32 массив [0..255].
+        """
+        w = max(3, int(window_size))
+        if w % 2 == 0:
+            w += 1
+        stat_key = (stat or "mean").lower()
+
+        if stat_key == "mean":
+            # BoxBlur(radius) эквивалентен усреднению в окне (2r+1)
+            radius = max(1, (w - 1) // 2)
+            filt = gray_img.filter(ImageFilter.BoxBlur(radius))
+            return np.asarray(filt, dtype=np.float32)
+        elif stat_key == "median":
+            filt = gray_img.filter(ImageFilter.MedianFilter(size=w))
+            return np.asarray(filt, dtype=np.float32)
+        elif stat_key in ("midrange", "minmax", "min+max/2"):
+            mn = gray_img.filter(ImageFilter.MinFilter(size=w))
+            mx = gray_img.filter(ImageFilter.MaxFilter(size=w))
+            mn_arr = np.asarray(mn, dtype=np.float32)
+            mx_arr = np.asarray(mx, dtype=np.float32)
+            return 0.5 * (mn_arr + mx_arr)
+        else:
+            # По умолчанию — среднее
+            radius = max(1, (w - 1) // 2)
+            filt = gray_img.filter(ImageFilter.BoxBlur(radius))
+            return np.asarray(filt, dtype=np.float32)
+
+    def adaptive_threshold(
+        self,
+        image: Image.Image,
+        k: int = 15,
+        C: float = 1.0,
+        T: float = 0.0,
+        stat: str = "mean",
+        polarity: str = "bright",
+    ) -> Image.Image:
+        """
+        Адаптивный порог по формуле:
+            I(x,y) >= C * S_k(x,y) + T   (для bright)
+            I(x,y) <= C * S_k(x,y) + T   (для dark)
+        где S_k — локальная статистика (среднее, медиана или (min+max)/2) в окне k×k.
+        """
+        gray = self.to_grayscale(image)
+        I = np.asarray(gray, dtype=np.float32)
+        S = self._local_stat(gray, window_size=k, stat=stat)
+        thresh = (float(C) * S) + float(T)
+        pol = (polarity or "bright").lower()
+        if pol == "dark":
+            mask = I <= thresh
+        else:
+            mask = I >= thresh
+        return self._apply_binary_mask(mask)
+
+    def _compose_labeled_row(self, labeled_images: List[Tuple[str, Image.Image]]) -> Image.Image:
+        """
+        Склейка по ширине с подписью над каждым блоком (h=24).
+        """
+        if not labeled_images:
+            # Defensive: пусто — возвращаем белый пиксель
+            return Image.new("L", (1, 1), color=255)
+        w, h = labeled_images[0][1].size
+        label_h = 24
+        gap = 12
+        total_w = w * len(labeled_images) + gap * (len(labeled_images) - 1)
+        total_h = h + label_h
+        canvas = Image.new("L", (total_w, total_h), color=255)
+        draw = ImageDraw.Draw(canvas)
+        x = 0
+        for label, img in labeled_images:
+            draw.text((x + 6, 4), label, fill=0)
+            canvas.paste(img, (x, label_h))
+            x += w + gap
+        return canvas
+
+    def adaptive_compare_k(
+        self,
+        image: Image.Image,
+        ks: Iterable[int] = (3, 5, 9, 15),
+        C: float = 1.0,
+        T: float = 0.0,
+        stat: str = "mean",
+        polarity: str = "bright",
+    ) -> Image.Image:
+        """
+        Сравнение адаптивного порога для разных k (размер окна).
+        """
+        labeled: List[Tuple[str, Image.Image]] = []
+        for k in ks:
+            kk = int(k)
+            if kk < 3:
+                kk = 3
+            if kk % 2 == 0:
+                kk += 1
+            img = self.adaptive_threshold(image, k=kk, C=C, T=T, stat=stat, polarity=polarity)
+            labeled.append((f"k={kk}", img))
+        return self._compose_labeled_row(labeled)
+
+    def adaptive_compare_C(
+        self,
+        image: Image.Image,
+        Cs: Iterable[float] = (0.8, 1.0, 1.2),
+        k: int = 15,
+        T: float = 0.0,
+        stat: str = "mean",
+        polarity: str = "bright",
+    ) -> Image.Image:
+        """
+        Сравнение адаптивного порога для разных значений C.
+        """
+        kk = int(k)
+        if kk < 3:
+            kk = 3
+        if kk % 2 == 0:
+            kk += 1
+        labeled: List[Tuple[str, Image.Image]] = []
+        for c in Cs:
+            img = self.adaptive_threshold(image, k=kk, C=float(c), T=T, stat=stat, polarity=polarity)
+            labeled.append((f"C={float(c):.3g}", img))
+        return self._compose_labeled_row(labeled)
+
+    def adaptive_compare_T(
+        self,
+        image: Image.Image,
+        Ts: Iterable[float] = (-10.0, 0.0, 10.0),
+        k: int = 15,
+        C: float = 1.0,
+        stat: str = "mean",
+        polarity: str = "bright",
+    ) -> Image.Image:
+        """
+        Сравнение адаптивного порога для разных значений T.
+        """
+        kk = int(k)
+        if kk < 3:
+            kk = 3
+        if kk % 2 == 0:
+            kk += 1
+        labeled: List[Tuple[str, Image.Image]] = []
+        for t in Ts:
+            img = self.adaptive_threshold(image, k=kk, C=C, T=float(t), stat=stat, polarity=polarity)
+            # Покажем T без лишних нулей
+            labeled.append((f"T={float(t):.3g}", img))
+        return self._compose_labeled_row(labeled)
 
 

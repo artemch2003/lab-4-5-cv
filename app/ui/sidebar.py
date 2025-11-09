@@ -93,6 +93,8 @@ class Sidebar(ctk.CTkFrame):
         self._tabs.add("Границы")
         self._tabs.add("Пороговые")
         self._tabs.add("K-средних")
+        # позволим вкладкам занимать доступную высоту
+        self.grid_rowconfigure(21, weight=1)
 
         # Кнопка быстрого возврата к оригиналу
         self._reset_btn = ctk.CTkButton(self, text="Показать оригинал", command=self._reset_to_original)
@@ -127,7 +129,12 @@ class Sidebar(ctk.CTkFrame):
         self._rb_sobel.grid(row=0, column=0, padx=6, pady=(6, 6), sticky="w")
 
         # Пороговые
-        thr_tab = self._tabs.tab("Пороговые")
+        # Внутри «Пороговые» используем прокручиваемый контейнер
+        thr_container = self._tabs.tab("Пороговые")
+        thr_container.grid_rowconfigure(0, weight=1)
+        thr_container.grid_columnconfigure(0, weight=1)
+        thr_tab = ctk.CTkScrollableFrame(thr_container)
+        thr_tab.grid(row=0, column=0, sticky="nsew")
         thr_tab.grid_columnconfigure(0, weight=1)
         # P-tile
         self._rb_ptile = ctk.CTkRadioButton(
@@ -170,6 +177,101 @@ class Sidebar(ctk.CTkFrame):
         self._iter_max_iter_entry.grid(row=9, column=0, padx=6, pady=(0, 8), sticky="w")
         self._iter_max_iter_entry.bind("<FocusOut>", self._on_iter_params_commit)
         self._iter_max_iter_entry.bind("<Return>", self._on_iter_params_commit)
+        # Адаптивный порог — одиночный
+        self._rb_adapt = ctk.CTkRadioButton(
+            thr_tab,
+            text="Порог (адаптивный)",
+            variable=self._processing_mode,
+            value="Порог (адаптивный)",
+            command=self._emit_processing_change,
+        )
+        self._rb_adapt.grid(row=10, column=0, padx=6, pady=(8, 2), sticky="w")
+
+        self._adapt_k_val = ctk.StringVar(value="15")
+        self._adapt_k_label = ctk.CTkLabel(thr_tab, text="Размер окна k (нечётн.):")
+        self._adapt_k_slider = ctk.CTkSlider(thr_tab, from_=3, to=51, number_of_steps=48, command=self._on_adapt_k_change)
+        self._adapt_k_slider.set(15)
+        self._adapt_k_value = ctk.CTkLabel(thr_tab, textvariable=self._adapt_k_val, width=32, anchor="w")
+        self._adapt_k_label.grid(row=11, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_k_slider.grid(row=12, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._adapt_k_value.grid(row=13, column=0, padx=6, pady=(0, 4), sticky="w")
+
+        self._adapt_C_val = ctk.StringVar(value="1.0")
+        self._adapt_C_label = ctk.CTkLabel(thr_tab, text="Коэффициент C:")
+        self._adapt_C_slider = ctk.CTkSlider(thr_tab, from_=0.0, to=2.0, number_of_steps=200, command=self._on_adapt_C_change)
+        self._adapt_C_slider.set(1.0)
+        self._adapt_C_value = ctk.CTkLabel(thr_tab, textvariable=self._adapt_C_val, width=48, anchor="w")
+        self._adapt_C_label.grid(row=14, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_C_slider.grid(row=15, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._adapt_C_value.grid(row=16, column=0, padx=6, pady=(0, 4), sticky="w")
+
+        self._adapt_T_val = ctk.StringVar(value="0")
+        self._adapt_T_label = ctk.CTkLabel(thr_tab, text="Смещение T:")
+        self._adapt_T_slider = ctk.CTkSlider(thr_tab, from_=-50, to=50, number_of_steps=100, command=self._on_adapt_T_change)
+        self._adapt_T_slider.set(0)
+        self._adapt_T_value = ctk.CTkLabel(thr_tab, textvariable=self._adapt_T_val, width=48, anchor="w")
+        self._adapt_T_label.grid(row=17, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_T_slider.grid(row=18, column=0, padx=6, pady=(0, 2), sticky="ew")
+        self._adapt_T_value.grid(row=19, column=0, padx=6, pady=(0, 4), sticky="w")
+
+        self._adapt_stat_label = ctk.CTkLabel(thr_tab, text="Статистика по окрестности:")
+        self._adapt_stat_menu = ctk.CTkOptionMenu(
+            thr_tab,
+            values=["Среднее", "Медиана", "Полудиапазон (min+max)/2"],
+            command=self._on_adapt_stat_change,
+        )
+        self._adapt_stat_menu.set("Среднее")
+        self._adapt_stat_label.grid(row=20, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_stat_menu.grid(row=21, column=0, padx=6, pady=(0, 8), sticky="w")
+
+        # Адаптивный порог — сравнение
+        self._rb_adapt_cmp_k = ctk.CTkRadioButton(
+            thr_tab,
+            text="Адаптивный сравнение (k)",
+            variable=self._processing_mode,
+            value="Адаптивный сравнение (k)",
+            command=self._emit_processing_change,
+        )
+        self._rb_adapt_cmp_k.grid(row=22, column=0, padx=6, pady=(8, 2), sticky="w")
+        self._adapt_cmp_ks_label = ctk.CTkLabel(thr_tab, text="Список k (через запятую):")
+        self._adapt_cmp_ks_vals = ctk.StringVar(value="3,5,9,15")
+        self._adapt_cmp_ks_entry = ctk.CTkEntry(thr_tab, textvariable=self._adapt_cmp_ks_vals)
+        self._adapt_cmp_ks_label.grid(row=23, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_cmp_ks_entry.grid(row=24, column=0, padx=6, pady=(0, 4), sticky="ew")
+        self._adapt_cmp_ks_entry.bind("<FocusOut>", self._on_adapt_params_commit)
+        self._adapt_cmp_ks_entry.bind("<Return>", self._on_adapt_params_commit)
+
+        self._rb_adapt_cmp_c = ctk.CTkRadioButton(
+            thr_tab,
+            text="Адаптивный сравнение (C)",
+            variable=self._processing_mode,
+            value="Адаптивный сравнение (C)",
+            command=self._emit_processing_change,
+        )
+        self._rb_adapt_cmp_c.grid(row=25, column=0, padx=6, pady=(8, 2), sticky="w")
+        self._adapt_cmp_cs_label = ctk.CTkLabel(thr_tab, text="Список C (через запятую):")
+        self._adapt_cmp_cs_vals = ctk.StringVar(value="0.8,1.0,1.2")
+        self._adapt_cmp_cs_entry = ctk.CTkEntry(thr_tab, textvariable=self._adapt_cmp_cs_vals)
+        self._adapt_cmp_cs_label.grid(row=26, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_cmp_cs_entry.grid(row=27, column=0, padx=6, pady=(0, 4), sticky="ew")
+        self._adapt_cmp_cs_entry.bind("<FocusOut>", self._on_adapt_params_commit)
+        self._adapt_cmp_cs_entry.bind("<Return>", self._on_adapt_params_commit)
+
+        self._rb_adapt_cmp_t = ctk.CTkRadioButton(
+            thr_tab,
+            text="Адаптивный сравнение (T)",
+            variable=self._processing_mode,
+            value="Адаптивный сравнение (T)",
+            command=self._emit_processing_change,
+        )
+        self._rb_adapt_cmp_t.grid(row=28, column=0, padx=6, pady=(8, 2), sticky="w")
+        self._adapt_cmp_ts_label = ctk.CTkLabel(thr_tab, text="Список T (через запятую):")
+        self._adapt_cmp_ts_vals = ctk.StringVar(value="-10,0,10")
+        self._adapt_cmp_ts_entry = ctk.CTkEntry(thr_tab, textvariable=self._adapt_cmp_ts_vals)
+        self._adapt_cmp_ts_label.grid(row=29, column=0, padx=6, pady=(0, 2), sticky="w")
+        self._adapt_cmp_ts_entry.grid(row=30, column=0, padx=6, pady=(0, 10), sticky="ew")
+        self._adapt_cmp_ts_entry.bind("<FocusOut>", self._on_adapt_params_commit)
+        self._adapt_cmp_ts_entry.bind("<Return>", self._on_adapt_params_commit)
 
         # K-средних
         km_tab = self._tabs.tab("K-средних")
@@ -266,7 +368,7 @@ class Sidebar(ctk.CTkFrame):
             self._tabs.set("Базовая")
         elif mode.startswith("Края"):
             self._tabs.set("Границы")
-        elif mode.startswith("Порог"):
+        elif mode.startswith("Порог") or mode.startswith("Адаптивный"):
             self._tabs.set("Пороговые")
         elif mode.startswith("K-средних"):
             self._tabs.set("K-средних")
@@ -347,6 +449,82 @@ class Sidebar(ctk.CTkFrame):
         if not ks:
             ks = [2, 3, 4]
         return tuple(ks[:8])
+    # Адаптивный: параметры и списки для сравнения
+    def get_adaptive_params(self) -> Tuple[int, float, float, str, str]:
+        # k
+        try:
+            k_val = int(round(self._adapt_k_slider.get()))
+        except Exception:
+            k_val = 15
+        if k_val < 3:
+            k_val = 3
+        if k_val % 2 == 0:
+            k_val += 1
+        # C
+        try:
+            C_val = float(self._adapt_C_slider.get())
+        except Exception:
+            C_val = 1.0
+        # T
+        try:
+            T_val = float(self._adapt_T_slider.get())
+        except Exception:
+            T_val = 0.0
+        # stat
+        stat_text = self._adapt_stat_menu.get()
+        if stat_text.startswith("Сред"):
+            stat_key = "mean"
+        elif stat_text.startswith("Мед"):
+            stat_key = "median"
+        else:
+            stat_key = "midrange"
+        # polarity — пока фиксируем bright (объект светлее)
+        polarity = "bright"
+        return k_val, C_val, T_val, stat_key, polarity
+
+    def get_adaptive_compare_ks(self) -> Tuple[int, ...]:
+        text = self._adapt_cmp_ks_vals.get().strip()
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        ks = []
+        for p in parts:
+            try:
+                v = int(p)
+                if v < 3:
+                    continue
+                if v % 2 == 0:
+                    v += 1
+                ks.append(v)
+            except ValueError:
+                continue
+        if not ks:
+            ks = [3, 5, 9, 15]
+        return tuple(ks[:8])
+
+    def get_adaptive_compare_Cs(self) -> Tuple[float, ...]:
+        text = self._adapt_cmp_cs_vals.get().strip()
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        out: list[float] = []
+        for p in parts:
+            try:
+                out.append(float(p))
+            except ValueError:
+                continue
+        if not out:
+            out = [0.8, 1.0, 1.2]
+        return tuple(out[:8])
+
+    def get_adaptive_compare_Ts(self) -> Tuple[float, ...]:
+        text = self._adapt_cmp_ts_vals.get().strip()
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        out: list[float] = []
+        for p in parts:
+            try:
+                out.append(float(p))
+            except ValueError:
+                continue
+        if not out:
+            out = [-10.0, 0.0, 10.0]
+        return tuple(out[:8])
 
     # Обработчики изменения параметров — пересчитать немедленно
     def _on_ptile_change(self, value: float) -> None:
@@ -370,6 +548,34 @@ class Sidebar(ctk.CTkFrame):
 
     def _on_kmeans_params_commit(self, _event: object) -> None:
         if self._processing_mode.get().startswith("K-средних"):
+            self._emit_processing_change("")
+    # Обработчики адаптивного — пересчитываем при изменении
+    def _on_adapt_k_change(self, value: float) -> None:
+        k = int(round(value))
+        if k % 2 == 0:
+            k += 1
+        k = max(3, k)
+        self._adapt_k_val.set(f"{k}")
+        if self._processing_mode.get().startswith("Порог (адаптивный)"):
+            self._emit_processing_change("")
+
+    def _on_adapt_C_change(self, value: float) -> None:
+        self._adapt_C_val.set(f"{value:.2f}")
+        if self._processing_mode.get().startswith("Порог (адаптивный)"):
+            self._emit_processing_change("")
+
+    def _on_adapt_T_change(self, value: float) -> None:
+        self._adapt_T_val.set(f"{int(round(value))}")
+        if self._processing_mode.get().startswith("Порог (адаптивный)"):
+            self._emit_processing_change("")
+
+    def _on_adapt_stat_change(self, _value: str) -> None:
+        if self._processing_mode.get().startswith("Порог (адаптивный)"):
+            self._emit_processing_change("")
+
+    def _on_adapt_params_commit(self, _event: object) -> None:
+        mode = self._processing_mode.get()
+        if mode.startswith("Адаптивный сравнение"):
             self._emit_processing_change("")
 
     def _reset_to_original(self) -> None:
